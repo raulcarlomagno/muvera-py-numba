@@ -140,6 +140,7 @@ The benchmark reports:
 - `speedup`: `original_ms / numba_warm_ms`
 
 `numba_cold_ms` is shown separately so the one-time JIT compilation cost is visible without distorting the steady-state throughput comparison.
+Each benchmark case runs in a separate subprocess so JIT state is isolated and memory is released when that worker exits.
 
 ## Repository files
 
