@@ -20,6 +20,8 @@ import fde_generator as original
 import fde_generator_numba as numba_impl
 
 BENCHMARK_CONFIG_SEED = 42
+BENCHMARK_NUM_REPETITIONS = 2
+BENCHMARK_NUM_SIMHASH_PROJECTIONS = 4
 
 
 class MEMORYSTATUSEX(ctypes.Structure):
@@ -59,7 +61,9 @@ def _matrix(seed: int, rows: int, cols: int) -> np.ndarray:
 
 def _docs(seed: int, count: int, length: int, dimension: int) -> list[np.ndarray]:
     rng = np.random.default_rng(seed)
-    return [rng.normal(size=(length, dimension)).astype(np.float32) for _ in range(count)]
+    return [
+        rng.normal(size=(length, dimension)).astype(np.float32) for _ in range(count)
+    ]
 
 
 def _available_physical_memory_bytes() -> int | None:
@@ -134,18 +138,26 @@ def _estimate_case_input_bytes(case: dict[str, Any]) -> int:
         return case["length"] * case["config"].dimension * float32_size
 
     if kind == "document_batch":
-        return case["doc_count"] * case["doc_length"] * case["config"].dimension * float32_size
+        return (
+            case["doc_count"]
+            * case["doc_length"]
+            * case["config"].dimension
+            * float32_size
+        )
 
     if kind == "query_batch":
         return (
-            case["query_count"] * case["query_length"] * case["config"].dimension * float32_size
+            case["query_count"]
+            * case["query_length"]
+            * case["config"].dimension
+            * float32_size
         )
 
     raise ValueError(f"Unsupported benchmark case kind: {kind}")
 
 
 def _format_gib(num_bytes: int) -> str:
-    return f"{num_bytes / (1024 ** 3):.2f} GiB"
+    return f"{num_bytes / (1024**3):.2f} GiB"
 
 
 def _preflight_case_memory(case_name: str) -> str | None:
@@ -161,8 +173,8 @@ def _preflight_case_memory(case_name: str) -> str | None:
     safe_budget = int(available_bytes * 0.5)
     if required_bytes > safe_budget:
         return (
-            f"estimated raw input { _format_gib(required_bytes) } exceeds safe memory "
-            f"budget { _format_gib(safe_budget) }"
+            f"estimated raw input {_format_gib(required_bytes)} exceeds safe memory "
+            f"budget {_format_gib(safe_budget)}"
         )
     return None
 
@@ -170,12 +182,11 @@ def _preflight_case_memory(case_name: str) -> str | None:
 BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     "query_single_small": {
         "kind": "query_single",
-        "size_label": "24 x 384",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=384,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 1_001,
@@ -183,12 +194,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "query_single_medium": {
         "kind": "query_single",
-        "size_label": "96 x 512",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=512,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 1_002,
@@ -196,12 +206,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "query_single_large": {
         "kind": "query_single",
-        "size_label": "384 x 768",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=768,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 1_003,
@@ -209,12 +218,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "document_single_small": {
         "kind": "document_single",
-        "size_label": "32 x 384",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=384,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
             fill_empty_partitions=True,
         ),
@@ -223,12 +231,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "document_single_medium": {
         "kind": "document_single",
-        "size_label": "128 x 512",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=512,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
             fill_empty_partitions=True,
         ),
@@ -237,12 +244,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "document_single_large": {
         "kind": "document_single",
-        "size_label": "512 x 768",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=768,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
             fill_empty_partitions=True,
         ),
@@ -251,12 +257,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "document_batch_small": {
         "kind": "document_batch",
-        "size_label": "100 docs x 128 x 384",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=384,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
             fill_empty_partitions=True,
         ),
@@ -266,12 +271,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "document_batch_medium": {
         "kind": "document_batch",
-        "size_label": "1500 docs x 512 x 512",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=512,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
             fill_empty_partitions=True,
         ),
@@ -281,12 +285,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "document_batch_large": {
         "kind": "document_batch",
-        "size_label": "5000 docs x 1024 x 768",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=768,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
             fill_empty_partitions=True,
         ),
@@ -296,12 +299,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "query_batch_small": {
         "kind": "query_batch",
-        "size_label": "100 queries x 128 x 384",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=384,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 4_001,
@@ -310,12 +312,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "query_batch_medium": {
         "kind": "query_batch",
-        "size_label": "1500 queries x 512 x 512",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=512,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 4_002,
@@ -324,12 +325,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
     },
     "query_batch_large": {
         "kind": "query_batch",
-        "size_label": "5000 queries x 1024 x 768",
         "config": replace(
             numba_impl.FixedDimensionalEncodingConfig(),
             dimension=768,
-            num_repetitions=3,
-            num_simhash_projections=5,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 4_003,
@@ -339,25 +339,43 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
 }
 
 
-def _build_case_inputs(case_name: str) -> tuple[str, str, Any, Any, numba_impl.FixedDimensionalEncodingConfig]:
+def _case_size_label(case: dict[str, Any]) -> str:
+    dimension = case["config"].dimension
+    kind = case["kind"]
+
+    if kind in {"query_single", "document_single"}:
+        return f"{case['length']} x {dimension}"
+
+    if kind == "document_batch":
+        return f"{case['doc_count']} docs x {case['doc_length']} x {dimension}"
+
+    if kind == "query_batch":
+        return f"{case['query_count']} queries x {case['query_length']} x {dimension}"
+
+    raise ValueError(f"Unsupported benchmark case kind: {kind}")
+
+
+def _build_case_inputs(
+    case_name: str,
+) -> tuple[str, str, Any, Any, numba_impl.FixedDimensionalEncodingConfig]:
     case = BENCHMARK_CASES[case_name]
     config = case["config"]
-    original_config = _to_original_config(config)
     kind = case["kind"]
+    size_label = _case_size_label(case)
 
     if kind == "query_single":
         point_cloud = _matrix(case["data_seed"], case["length"], config.dimension)
-        return kind, case["size_label"], point_cloud, point_cloud, config
+        return kind, size_label, point_cloud, point_cloud, config
 
     if kind == "document_single":
         point_cloud = _matrix(case["data_seed"], case["length"], config.dimension)
-        return kind, case["size_label"], point_cloud, point_cloud, config
+        return kind, size_label, point_cloud, point_cloud, config
 
     if kind == "document_batch":
         docs = _docs(
             case["data_seed"], case["doc_count"], case["doc_length"], config.dimension
         )
-        return kind, case["size_label"], docs, docs, config
+        return kind, size_label, docs, docs, config
 
     if kind == "query_batch":
         queries = _docs(
@@ -366,7 +384,7 @@ def _build_case_inputs(case_name: str) -> tuple[str, str, Any, Any, numba_impl.F
             case["query_length"],
             config.dimension,
         )
-        return kind, case["size_label"], queries, queries, config
+        return kind, size_label, queries, queries, config
 
     raise ValueError(f"Unsupported benchmark case kind: {kind}")
 
@@ -393,7 +411,9 @@ def _get_runners(
 
     if kind == "document_batch":
         return (
-            lambda: original.generate_document_fde_batch(original_inputs, original_config),
+            lambda: original.generate_document_fde_batch(
+                original_inputs, original_config
+            ),
             lambda: numba_impl.generate_document_fde_batch(numba_inputs, config),
         )
 
@@ -440,14 +460,18 @@ def _run_case(case_name: str, repeats: int, validate: bool) -> dict[str, Any]:
         return {
             "case": case_name,
             "kind": case["kind"],
-            "size": case["size_label"],
+            "size": _case_size_label(case),
             "repeats": repeats,
             "status": "skipped",
             "reason": skip_reason,
         }
 
-    kind, size_label, original_inputs, numba_inputs, config = _build_case_inputs(case_name)
-    original_runner, numba_runner = _get_runners(kind, original_inputs, numba_inputs, config)
+    kind, size_label, original_inputs, numba_inputs, config = _build_case_inputs(
+        case_name
+    )
+    original_runner, numba_runner = _get_runners(
+        kind, original_inputs, numba_inputs, config
+    )
 
     try:
         if validate:
@@ -469,7 +493,9 @@ def _run_case(case_name: str, repeats: int, validate: bool) -> dict[str, Any]:
             "original_s": original_time,
             "numba_cold_s": numba_cold_time,
             "numba_warm_s": numba_warm_time,
-            "speedup": original_time / numba_warm_time if numba_warm_time else float("inf"),
+            "speedup": original_time / numba_warm_time
+            if numba_warm_time
+            else float("inf"),
         }
     except (MemoryError, np.core._exceptions._ArrayMemoryError) as exc:
         return {
@@ -489,7 +515,9 @@ def _run_case(case_name: str, repeats: int, validate: bool) -> dict[str, Any]:
         _cleanup_memory()
 
 
-def _run_case_in_subprocess(case_name: str, repeats: int, validate: bool) -> dict[str, Any]:
+def _run_case_in_subprocess(
+    case_name: str, repeats: int, validate: bool
+) -> dict[str, Any]:
     command = [
         sys.executable,
         __file__,
@@ -510,6 +538,24 @@ def _run_case_in_subprocess(case_name: str, repeats: int, validate: bool) -> dic
             f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
         )
     return json.loads(completed.stdout)
+
+
+def _print_progress_start(
+    index: int, total: int, case_name: str, size_label: str
+) -> None:
+    print(f"[{index}/{total}] Running {case_name} ({size_label})...", flush=True)
+
+
+def _print_progress_end(result: dict[str, Any]) -> None:
+    if result["status"] == "ok":
+        print(
+            f"    completed: original={_format_ms(result['original_s'])} ms, "
+            f"numba_warm={_format_ms(result['numba_warm_s'])} ms, "
+            f"speedup={result['speedup']:.2f}x",
+            flush=True,
+        )
+    else:
+        print(f"    skipped: {result['reason']}", flush=True)
 
 
 def _format_ms(seconds: float) -> str:
@@ -615,10 +661,15 @@ def main() -> None:
     selected_cases = args.cases or list(BENCHMARK_CASES.keys())
     validate = args.validate
 
-    results = [
-        _run_case_in_subprocess(case_name, args.repeats, validate)
-        for case_name in selected_cases
-    ]
+    results = []
+    total_cases = len(selected_cases)
+    for index, case_name in enumerate(selected_cases, start=1):
+        size_label = _case_size_label(BENCHMARK_CASES[case_name])
+        _print_progress_start(index, total_cases, case_name, size_label)
+        result = _run_case_in_subprocess(case_name, args.repeats, validate)
+        _print_progress_end(result)
+        results.append(result)
+        print(flush=True)
 
     print("FDE speed benchmark")
     print("cold = first Numba call in a fresh worker process")
