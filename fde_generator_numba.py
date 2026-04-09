@@ -152,39 +152,32 @@ def _apply_count_sketch_batch_numba(input_matrix: np.ndarray, indices: np.ndarra
     return out
 
 
-@njit(fastmath=True)
 def _simhash_matrix_from_seed(
     dimension: int, num_projections: int, seed: int
 ) -> np.ndarray:
-    np.random.seed(seed)
-    out = np.empty((dimension, num_projections), dtype=np.float32)
-    for i in range(dimension):
-        for j in range(num_projections):
-            out[i, j] = np.random.standard_normal()
-    return out
+    rng = np.random.default_rng(seed)
+    return rng.normal(loc=0.0, scale=1.0, size=(dimension, num_projections)).astype(
+        np.float32
+    )
 
 
-@njit(fastmath=True)
 def _ams_projection_matrix_from_seed(
     dimension: int, projection_dim: int, seed: int
 ) -> np.ndarray:
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     out = np.zeros((dimension, projection_dim), dtype=np.float32)
-    for i in range(dimension):
-        idx = np.random.randint(0, projection_dim)
-        sign = 1.0 if np.random.rand() > 0.5 else -1.0
-        out[i, idx] = sign
+    indices = rng.integers(0, projection_dim, size=dimension)
+    signs = rng.choice([-1.0, 1.0], size=dimension)
+    out[np.arange(dimension), indices] = signs
     return out
 
 
-@njit(fastmath=True)
 def _generate_count_sketch_params_numba(seed: int, size: int, final_dimension: int):
-    np.random.seed(seed)
-    indices = np.empty(size, dtype=np.int32)
-    signs = np.empty(size, dtype=np.float32)
-    for i in range(size):
-        indices[i] = np.random.randint(0, final_dimension)
-        signs[i] = 1.0 if np.random.rand() > 0.5 else -1.0
+    rng = np.random.default_rng(seed)
+    indices = rng.integers(0, final_dimension, size=size).astype(np.int32)
+    signs = rng.choice(np.array([-1.0, 1.0], dtype=np.float32), size=size).astype(
+        np.float32
+    )
     return indices, signs
 
 

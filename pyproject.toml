@@ -30,5 +30,8 @@ dev = [
   "pytest",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.setuptools]
 py-modules = ["fde_generator", "fde_generator_numba"]

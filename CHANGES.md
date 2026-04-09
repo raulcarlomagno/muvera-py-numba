@@ -12,7 +12,11 @@ Activated hardware-level thread parallelism by injecting `parallel=True` and rep
 Integrated Numba's `fastmath=True` flag across computationally dense decorators. By relaxing strict IEEE-754 validation semantics (e.g., NaN and Infinity branching checks), LLVM can automatically emit optimal AVX/SIMD instructions, speeding up large arithmetic operations up to an additional 30%.
 
 ## 4. Elimination of Python-Managed RNGs (`default_rng` Replacement)
-Re-architected all random matrix initializers (`simhash_matrix_from_seed`, `ams_projection_matrix_from_seed`, and `count_sketch` configurations). Standard `np.random.default_rng()` requires instantiating an internal Python Generator object repeatedly—causing severe GC thrashing inside loops. The new architecture binds directly to Numba's internal non-blocking Pseudo-Random Number Generators operating directly on continuous hardware memory.
+This optimization path was explored for all random matrix initializers (`simhash_matrix_from_seed`, `ams_projection_matrix_from_seed`, and `count_sketch` configurations), replacing `np.random.default_rng()` with Numba-native random generation in order to reduce Python-side overhead during repeated setup work.
+
+However, this change was ultimately not kept in the current version, because the project now prioritizes output equivalence with the original Python implementation from `muvera-py`. Keeping the original RNG behavior makes it easier to compare outputs directly between both versions.
+
+That said, a future version of the Numba module could expose a configuration parameter to choose between two modes: preserving the original Python RNG behavior for output equivalence, or using Numba-native random generation for maximum throughput.
 
 ## 5. Memory-Constrained "In-Place" Operations
 Deprecated slow allocation flows like `np.add.at` or large Hamming distance sub-array tracking (such as in `fill_empty_partitions`). These were converted to nested native algorithms that modify multi-dimensional tensors directly by their indexes, eliminating gigabytes of transient RAM footprint during large dataset processing. 

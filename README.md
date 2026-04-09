@@ -5,6 +5,11 @@
 This project is intentionally lightweight: it is not meant to be installed as a mandatory dependency in every codebase.
 If your project already uses `numpy` and `numba`, you can simply copy `fde_generator_numba.py` into your own repository and use it directly without adding extra packaging overhead.
 
+The current version keeps the random generation path for SimHash, AMS sketch, and Count Sketch aligned with the original Python implementation so the outputs remain equivalent across both versions.
+This is useful if you want to use `fde_generator_numba.py` for large batch generation while still keeping the original pure-Python implementation for query-time paths.
+If your only goal is maximum Numba-oriented performance, that part could be re-optimized more aggressively, but doing so would break strict output equivalence with `muvera-py`.
+That alternative direction is described in point 4 of [`CHANGES.md`](CHANGES.md): replacing Python-managed RNG usage with Numba-native random initialization to reduce overhead in repeated SimHash, AMS sketch, and Count Sketch setup.
+
 The goal of this repository is simple:
 
 - keep the original FDE behavior and API spirit
@@ -35,7 +40,6 @@ It was then adapted into `fde_generator_numba.py` with the following changes:
 - Numba JIT compilation for the heavy numerical paths, replacing pure Python loops with compiled native code
 - parallel execution with `parallel=True` and `prange` in the main hotspots
 - `fastmath=True` in the computationally dense kernels to let LLVM generate faster vectorized instructions
-- custom random matrix generation for SimHash, AMS sketch, and Count Sketch parameters without relying on repeated Python-level RNG setup
 - in-place style aggregation logic to avoid expensive temporary allocations and reduce memory pressure
 - contiguous array handling with `np.ascontiguousarray()` to improve cache locality during matrix operations
 - a new `generate_query_fde_batch()` method that was not present in the original version and enables efficient batch query generation
