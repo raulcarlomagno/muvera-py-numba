@@ -113,11 +113,40 @@ batch_fde = generate_query_fde_batch(batch, config)
 - `generate_query_fde_batch()` is intended for batch query workloads and avoids calling the single-query function repeatedly.
 - The codebase is still rooted in the Python implementation from `muvera-py`; the Numba version is an optimization layer, not a rewrite of the project model.
 
+## Benchmarking
+
+This repository keeps correctness checks and performance checks separate.
+
+- Use `uv run pytest` for equivalence and regression testing.
+- Use the benchmark script for timing comparisons between the original implementation and the Numba version.
+
+Run the benchmark with:
+
+```bash
+uv run python benchmarks/benchmark_fde.py
+```
+
+Useful options:
+
+- `--repeats 10`: increase the number of timing repetitions
+- `--cases query_single_large document_batch_large`: run only a subset of cases
+- `--skip-validate`: skip the numerical equivalence check before timing
+
+The benchmark reports:
+
+- `original_ms`: median runtime of the baseline Python implementation
+- `numba_cold_ms`: first Numba call in a fresh worker process
+- `numba_warm_ms`: median runtime after an explicit warmup call
+- `speedup`: `original_ms / numba_warm_ms`
+
+`numba_cold_ms` is shown separately so the one-time JIT compilation cost is visible without distorting the steady-state throughput comparison.
+
 ## Repository files
 
 - `fde_generator.py`: original reference implementation
 - `fde_generator_numba.py`: optimized Numba version
 - `CHANGES.md`: summary of the main optimizations introduced in this fork
+- `benchmarks/benchmark_fde.py`: reproducible speed comparison script
 
 ## License
 
