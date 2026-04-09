@@ -42,6 +42,7 @@ _PROFILE_ENABLED = os.environ.get("MUVERA_NUMBA_PROFILE", "").lower() in {
 _SIMHASH_CACHE: dict[tuple[int, int, int], np.ndarray] = {}
 _AMS_CACHE: dict[tuple[int, int, int], np.ndarray] = {}
 _COUNT_SKETCH_CACHE: dict[tuple[int, int, int], tuple[np.ndarray, np.ndarray]] = {}
+_PARTITION_BITS_CACHE: dict[int, np.ndarray] = {}
 
 
 def _profile_log(enabled: bool, label: str, start_time: float) -> None:
@@ -68,6 +69,15 @@ def _gray_code_to_binary_numba(num: int) -> int:
     return num
 
 
+@njit(fastmath=True)
+def _compute_sketch_bits_numba(sketches: np.ndarray) -> np.ndarray:
+    out = np.zeros(sketches.shape, dtype=np.uint8)
+    for i in range(sketches.shape[0]):
+        for j in range(sketches.shape[1]):
+            out[i, j] = 1 if sketches[i, j] > 0 else 0
+    return out
+
+
 @njit(parallel=True, fastmath=True)
 def _compute_partition_indices_numba(
     sketches: np.ndarray, num_projections: int
@@ -81,6 +91,37 @@ def _compute_partition_indices_numba(
             idx = (idx << 1) + (int(bit) ^ (idx & 1))
         partition_indices[i] = idx
     return partition_indices
+
+
+@njit(parallel=True, fastmath=True)
+def _compute_partition_indices_numba_4(sketches: np.ndarray) -> np.ndarray:
+    n = sketches.shape[0]
+    partition_indices = np.zeros(n, dtype=np.uint32)
+    for i in prange(n):
+        idx = 0
+
+        bit0 = 1 if sketches[i, 0] > 0 else 0
+        idx = (idx << 1) + (bit0 ^ (idx & 1))
+
+        bit1 = 1 if sketches[i, 1] > 0 else 0
+        idx = (idx << 1) + (bit1 ^ (idx & 1))
+
+        bit2 = 1 if sketches[i, 2] > 0 else 0
+        idx = (idx << 1) + (bit2 ^ (idx & 1))
+
+        bit3 = 1 if sketches[i, 3] > 0 else 0
+        idx = (idx << 1) + (bit3 ^ (idx & 1))
+
+        partition_indices[i] = idx
+    return partition_indices
+
+
+def _compute_partition_indices(
+    sketches: np.ndarray, num_projections: int
+) -> np.ndarray:
+    if num_projections == 4:
+        return _compute_partition_indices_numba_4(sketches)
+    return _compute_partition_indices_numba(sketches, num_projections)
 
 
 @njit(fastmath=True)
@@ -124,25 +165,21 @@ def _aggregate_avg_single_numba(
 def _fill_empty_partitions_single_numba(
     out: np.ndarray,
     counts: np.ndarray,
-    sketches: np.ndarray,
+    sketch_bits: np.ndarray,
     projected_points: np.ndarray,
-    num_partitions: int,
-    num_simhash_projections: int,
+    partition_target_bits: np.ndarray,
 ) -> None:
-    for p in range(num_partitions):
+    for p in range(partition_target_bits.shape[0]):
         if counts[p] != 0:
             continue
 
-        binary_rep = _gray_code_to_binary_numba(p)
-        min_dist = num_simhash_projections + 1
+        min_dist = partition_target_bits.shape[1] + 1
         nearest_idx = 0
 
-        for i in range(sketches.shape[0]):
+        for i in range(sketch_bits.shape[0]):
             dist = 0
-            for b in range(num_simhash_projections):
-                sketch_bit = sketches[i, b] > 0
-                target_bit = (binary_rep >> (num_simhash_projections - 1 - b)) & 1
-                if sketch_bit != target_bit:
+            for b in range(partition_target_bits.shape[1]):
+                if sketch_bits[i, b] != partition_target_bits[p, b]:
                     dist += 1
 
             if dist < min_dist:
@@ -213,12 +250,11 @@ def _fill_empty_partitions_numba(
     out: np.ndarray,
     counts: np.ndarray,
     doc_boundaries: np.ndarray,
-    doc_sketches: np.ndarray,
+    doc_sketch_bits: np.ndarray,
     projected_points: np.ndarray,
     num_docs: int,
-    num_partitions: int,
     projection_dim: int,
-    num_simhash_projections: int,
+    partition_target_bits: np.ndarray,
 ) -> None:
     for doc_idx in prange(num_docs):
         start = doc_boundaries[doc_idx]
@@ -226,20 +262,17 @@ def _fill_empty_partitions_numba(
         if start == end:
             continue
 
-        for p in range(num_partitions):
+        for p in range(partition_target_bits.shape[0]):
             if counts[doc_idx, p] != 0:
                 continue
 
-            binary_rep = _gray_code_to_binary_numba(p)
-            min_dist = num_simhash_projections + 1
+            min_dist = partition_target_bits.shape[1] + 1
             nearest_idx = start
 
             for i in range(start, end):
                 dist = 0
-                for b in range(num_simhash_projections):
-                    sketch_bit = doc_sketches[i, b] > 0
-                    target_bit = (binary_rep >> (num_simhash_projections - 1 - b)) & 1
-                    if sketch_bit != target_bit:
+                for b in range(partition_target_bits.shape[1]):
+                    if doc_sketch_bits[i, b] != partition_target_bits[p, b]:
                         dist += 1
 
                 if dist < min_dist:
@@ -332,6 +365,23 @@ def _get_count_sketch_params(
     return params
 
 
+def _get_partition_target_bits(num_simhash_projections: int) -> np.ndarray:
+    target_bits = _PARTITION_BITS_CACHE.get(num_simhash_projections)
+    if target_bits is not None:
+        return target_bits
+
+    num_partitions = 2**num_simhash_projections
+    target_bits = np.zeros((num_partitions, num_simhash_projections), dtype=np.uint8)
+    for partition_index in range(num_partitions):
+        binary_rep = _gray_code_to_binary_numba(partition_index)
+        for bit_idx in range(num_simhash_projections):
+            shift = num_simhash_projections - 1 - bit_idx
+            target_bits[partition_index, bit_idx] = (binary_rep >> shift) & 1
+
+    _PARTITION_BITS_CACHE[num_simhash_projections] = target_bits
+    return target_bits
+
+
 def _project_points(
     point_cloud: np.ndarray,
     config: FixedDimensionalEncodingConfig,
@@ -379,7 +429,7 @@ def _generate_query_fde_single(
             _profile_log(profile, f"single_query rep={rep_num} projections", start)
 
             start = time.perf_counter()
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out = _aggregate_sum_single_numba(
@@ -390,7 +440,7 @@ def _generate_query_fde_single(
             sketches, projected_points = _project_points(
                 point_cloud, config, rep_seed, projection_dim
             )
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out = _aggregate_sum_single_numba(
@@ -440,40 +490,46 @@ def _generate_document_fde_single(
             _profile_log(profile, f"single_document rep={rep_num} projections", start)
 
             start = time.perf_counter()
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out, counts = _aggregate_avg_single_numba(
                 projected_points, partition_indices, num_partitions
             )
             if config.fill_empty_partitions and point_cloud.shape[0] > 0:
+                sketch_bits = _compute_sketch_bits_numba(sketches)
+                partition_target_bits = _get_partition_target_bits(
+                    config.num_simhash_projections
+                )
                 _fill_empty_partitions_single_numba(
                     rep_fde_out,
                     counts,
-                    sketches,
+                    sketch_bits,
                     projected_points,
-                    num_partitions,
-                    config.num_simhash_projections,
+                    partition_target_bits,
                 )
             _profile_log(profile, f"single_document rep={rep_num} aggregate", start)
         else:
             sketches, projected_points = _project_points(
                 point_cloud, config, rep_seed, projection_dim
             )
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out, counts = _aggregate_avg_single_numba(
                 projected_points, partition_indices, num_partitions
             )
             if config.fill_empty_partitions and point_cloud.shape[0] > 0:
+                sketch_bits = _compute_sketch_bits_numba(sketches)
+                partition_target_bits = _get_partition_target_bits(
+                    config.num_simhash_projections
+                )
                 _fill_empty_partitions_single_numba(
                     rep_fde_out,
                     counts,
-                    sketches,
+                    sketch_bits,
                     projected_points,
-                    num_partitions,
-                    config.num_simhash_projections,
+                    partition_target_bits,
                 )
 
         rep_start = rep_num * num_partitions * projection_dim
@@ -533,7 +589,7 @@ def generate_document_fde_batch(
             _profile_log(profile, f"batch_document rep={rep_num} projections", start)
 
             start = time.perf_counter()
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             _profile_log(profile, f"batch_document rep={rep_num} partition_indices", start)
@@ -551,23 +607,26 @@ def generate_document_fde_batch(
 
             if config.fill_empty_partitions:
                 start = time.perf_counter()
+                sketch_bits = _compute_sketch_bits_numba(sketches)
+                partition_target_bits = _get_partition_target_bits(
+                    config.num_simhash_projections
+                )
                 _fill_empty_partitions_numba(
                     rep_fde_out,
                     partition_counts,
                     doc_boundaries,
-                    sketches,
+                    sketch_bits,
                     projected_points,
                     len(valid_docs),
-                    num_partitions,
                     projection_dim,
-                    config.num_simhash_projections,
+                    partition_target_bits,
                 )
                 _profile_log(profile, f"batch_document rep={rep_num} fill_empty", start)
         else:
             sketches, projected_points = _project_points(
                 all_points, config, rep_seed, projection_dim
             )
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out, partition_counts = _aggregate_avg_batch_numba_parallel(
@@ -579,16 +638,19 @@ def generate_document_fde_batch(
                 projection_dim,
             )
             if config.fill_empty_partitions:
+                sketch_bits = _compute_sketch_bits_numba(sketches)
+                partition_target_bits = _get_partition_target_bits(
+                    config.num_simhash_projections
+                )
                 _fill_empty_partitions_numba(
                     rep_fde_out,
                     partition_counts,
                     doc_boundaries,
-                    sketches,
+                    sketch_bits,
                     projected_points,
                     len(valid_docs),
-                    num_partitions,
                     projection_dim,
-                    config.num_simhash_projections,
+                    partition_target_bits,
                 )
 
         rep_start = rep_num * num_partitions * projection_dim
@@ -660,7 +722,7 @@ def generate_query_fde_batch(
             _profile_log(profile, f"batch_query rep={rep_num} projections", start)
 
             start = time.perf_counter()
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out = _aggregate_sum_batch_numba_parallel(
@@ -676,7 +738,7 @@ def generate_query_fde_batch(
             sketches, projected_points = _project_points(
                 all_points, config, rep_seed, projection_dim
             )
-            partition_indices = _compute_partition_indices_numba(
+            partition_indices = _compute_partition_indices(
                 sketches, config.num_simhash_projections
             )
             rep_fde_out = _aggregate_sum_batch_numba_parallel(
