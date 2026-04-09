@@ -398,6 +398,14 @@ def _case_size_label(case: dict[str, Any]) -> str:
     raise ValueError(f"Unsupported benchmark case kind: {kind}")
 
 
+def _result_output_dimension(result: np.ndarray) -> int:
+    if result.ndim == 1:
+        return int(result.shape[0])
+    if result.ndim == 2:
+        return int(result.shape[1])
+    raise ValueError(f"Unsupported result shape for output dimension: {result.shape}")
+
+
 def _build_case_inputs(
     case_name: str,
 ) -> tuple[str, str, Any, Any, numba_impl.FixedDimensionalEncodingConfig]:
@@ -512,20 +520,26 @@ def _run_case(case_name: str, repeats: int, validate: bool) -> dict[str, Any]:
     )
 
     try:
+        output_dim: int | None = None
+
         if validate:
             expected = original_runner()
             actual = numba_runner()
             np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-6)
+            output_dim = _result_output_dimension(actual)
 
         original_time = _measure_median(original_runner, repeats)
         numba_cold_time, _ = _measure_once(numba_runner)
-        _ = numba_runner()
+        warmup_result = numba_runner()
+        if output_dim is None:
+            output_dim = _result_output_dimension(warmup_result)
         numba_warm_time = _measure_median(numba_runner, repeats)
 
         return {
             "case": case_name,
             "kind": kind,
             "size": size_label,
+            "output_dim": output_dim,
             "repeats": repeats,
             "status": "ok",
             "original_s": original_time,
@@ -540,6 +554,7 @@ def _run_case(case_name: str, repeats: int, validate: bool) -> dict[str, Any]:
             "case": case_name,
             "kind": kind,
             "size": size_label,
+            "output_dim": None,
             "repeats": repeats,
             "status": "skipped",
             "reason": f"memory allocation failed: {exc}",
@@ -604,6 +619,7 @@ def _print_table(results: list[dict[str, Any]]) -> None:
     headers = [
         "case",
         "size",
+        "output_dim",
         "repeats",
         "status",
         "original_ms",
@@ -619,6 +635,7 @@ def _print_table(results: list[dict[str, Any]]) -> None:
                 [
                     result["case"],
                     result["size"],
+                    str(result["output_dim"]),
                     str(result["repeats"]),
                     result["status"],
                     _format_ms(result["original_s"]),
@@ -633,6 +650,7 @@ def _print_table(results: list[dict[str, Any]]) -> None:
                 [
                     result["case"],
                     result["size"],
+                    "-" if result["output_dim"] is None else str(result["output_dim"]),
                     str(result["repeats"]),
                     result["status"],
                     "-",
