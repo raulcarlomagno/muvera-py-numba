@@ -22,6 +22,13 @@ import fde_generator_numba as numba_impl
 BENCHMARK_CONFIG_SEED = 42
 BENCHMARK_NUM_REPETITIONS = 2
 BENCHMARK_NUM_SIMHASH_PROJECTIONS = 4
+BATCH_COUNT_SMALL = 1000
+BATCH_COUNT_MEDIUM = 5000
+BATCH_COUNT_LARGE = 10000
+BATCH_LENGTH_MEAN = 50.0
+BATCH_LENGTH_STD = 15.0
+BATCH_LENGTH_MIN = 1
+BATCH_LENGTH_MAX = 100
 
 
 class MEMORYSTATUSEX(ctypes.Structure):
@@ -59,10 +66,18 @@ def _matrix(seed: int, rows: int, cols: int) -> np.ndarray:
     return rng.normal(size=(rows, cols)).astype(np.float32)
 
 
-def _docs(seed: int, count: int, length: int, dimension: int) -> list[np.ndarray]:
+def _sample_batch_lengths(seed: int, count: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    lengths = np.rint(rng.normal(BATCH_LENGTH_MEAN, BATCH_LENGTH_STD, size=count))
+    lengths = np.clip(lengths, BATCH_LENGTH_MIN, BATCH_LENGTH_MAX)
+    return lengths.astype(np.int32)
+
+
+def _docs(seed: int, lengths: np.ndarray, dimension: int) -> list[np.ndarray]:
     rng = np.random.default_rng(seed)
     return [
-        rng.normal(size=(length, dimension)).astype(np.float32) for _ in range(count)
+        rng.normal(size=(int(length), dimension)).astype(np.float32)
+        for length in lengths
     ]
 
 
@@ -138,20 +153,12 @@ def _estimate_case_input_bytes(case: dict[str, Any]) -> int:
         return case["length"] * case["config"].dimension * float32_size
 
     if kind == "document_batch":
-        return (
-            case["doc_count"]
-            * case["doc_length"]
-            * case["config"].dimension
-            * float32_size
-        )
+        lengths = _batch_lengths_for_case(case)
+        return int(lengths.sum()) * case["config"].dimension * float32_size
 
     if kind == "query_batch":
-        return (
-            case["query_count"]
-            * case["query_length"]
-            * case["config"].dimension
-            * float32_size
-        )
+        lengths = _batch_lengths_for_case(case)
+        return int(lengths.sum()) * case["config"].dimension * float32_size
 
     raise ValueError(f"Unsupported benchmark case kind: {kind}")
 
@@ -266,8 +273,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
             fill_empty_partitions=True,
         ),
         "data_seed": 3_001,
-        "doc_count": 100,
-        "doc_length": 128,
+        "doc_count": BATCH_COUNT_SMALL,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
     },
     "document_batch_medium": {
         "kind": "document_batch",
@@ -280,8 +290,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
             fill_empty_partitions=True,
         ),
         "data_seed": 3_002,
-        "doc_count": 1500,
-        "doc_length": 512,
+        "doc_count": BATCH_COUNT_MEDIUM,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
     },
     "document_batch_large": {
         "kind": "document_batch",
@@ -294,8 +307,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
             fill_empty_partitions=True,
         ),
         "data_seed": 3_003,
-        "doc_count": 5000,
-        "doc_length": 1024,
+        "doc_count": BATCH_COUNT_LARGE,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
     },
     "query_batch_small": {
         "kind": "query_batch",
@@ -307,8 +323,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 4_001,
-        "query_count": 100,
-        "query_length": 128,
+        "query_count": BATCH_COUNT_SMALL,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
     },
     "query_batch_medium": {
         "kind": "query_batch",
@@ -320,8 +339,11 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 4_002,
-        "query_count": 1500,
-        "query_length": 512,
+        "query_count": BATCH_COUNT_MEDIUM,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
     },
     "query_batch_large": {
         "kind": "query_batch",
@@ -333,10 +355,23 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
             seed=BENCHMARK_CONFIG_SEED,
         ),
         "data_seed": 4_003,
-        "query_count": 5000,
-        "query_length": 1024,
+        "query_count": BATCH_COUNT_LARGE,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
     },
 }
+
+
+def _batch_lengths_for_case(case: dict[str, Any]) -> np.ndarray:
+    if case["kind"] == "document_batch":
+        return _sample_batch_lengths(case["data_seed"], case["doc_count"])
+
+    if case["kind"] == "query_batch":
+        return _sample_batch_lengths(case["data_seed"], case["query_count"])
+
+    raise ValueError(f"Unsupported batch case kind: {case['kind']}")
 
 
 def _case_size_label(case: dict[str, Any]) -> str:
@@ -347,10 +382,18 @@ def _case_size_label(case: dict[str, Any]) -> str:
         return f"{case['length']} x {dimension}"
 
     if kind == "document_batch":
-        return f"{case['doc_count']} docs x {case['doc_length']} x {dimension}"
+        lengths = _batch_lengths_for_case(case)
+        return (
+            f"{case['doc_count']} docs x len[{int(lengths.min())}-{int(lengths.max())}] "
+            f"avg={lengths.mean():.1f} x {dimension}"
+        )
 
     if kind == "query_batch":
-        return f"{case['query_count']} queries x {case['query_length']} x {dimension}"
+        lengths = _batch_lengths_for_case(case)
+        return (
+            f"{case['query_count']} queries x len[{int(lengths.min())}-{int(lengths.max())}] "
+            f"avg={lengths.mean():.1f} x {dimension}"
+        )
 
     raise ValueError(f"Unsupported benchmark case kind: {kind}")
 
@@ -372,18 +415,13 @@ def _build_case_inputs(
         return kind, size_label, point_cloud, point_cloud, config
 
     if kind == "document_batch":
-        docs = _docs(
-            case["data_seed"], case["doc_count"], case["doc_length"], config.dimension
-        )
+        lengths = _batch_lengths_for_case(case)
+        docs = _docs(case["data_seed"] + 1, lengths, config.dimension)
         return kind, size_label, docs, docs, config
 
     if kind == "query_batch":
-        queries = _docs(
-            case["data_seed"],
-            case["query_count"],
-            case["query_length"],
-            config.dimension,
-        )
+        lengths = _batch_lengths_for_case(case)
+        queries = _docs(case["data_seed"] + 1, lengths, config.dimension)
         return kind, size_label, queries, queries, config
 
     raise ValueError(f"Unsupported benchmark case kind: {kind}")
