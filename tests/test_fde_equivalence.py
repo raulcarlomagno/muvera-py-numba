@@ -144,6 +144,16 @@ def test_generate_fde_dispatch_matches_query_path(
     _assert_close(actual, expected)
 
 
+@pytest.mark.parametrize("case_name, config, length, data_seed", QUERY_CASES)
+def test_query_single_matches_batch_singleton(
+    case_name: str, config, length: int, data_seed: int
+) -> None:
+    query = _matrix(data_seed, length, config.dimension)
+    expected = numba_impl.generate_query_fde_batch([query], config)[0]
+    actual = numba_impl.generate_query_fde(query, config)
+    _assert_close(actual, expected)
+
+
 @pytest.mark.parametrize("case_name, config, lengths, data_seed", DOCUMENT_CASES)
 def test_document_fde_matches_original(
     case_name: str, config, lengths: list[int], data_seed: int
@@ -153,6 +163,17 @@ def test_document_fde_matches_original(
 
     for doc in docs:
         expected = original.generate_document_fde(doc, original_config)
+        actual = numba_impl.generate_document_fde(doc, config)
+        _assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("case_name, config, lengths, data_seed", DOCUMENT_CASES)
+def test_document_single_matches_batch_singleton(
+    case_name: str, config, lengths: list[int], data_seed: int
+) -> None:
+    docs = _docs(data_seed, lengths, config.dimension)
+    for doc in docs:
+        expected = numba_impl.generate_document_fde_batch([doc], config)[0]
         actual = numba_impl.generate_document_fde(doc, config)
         _assert_close(actual, expected)
 
@@ -221,4 +242,3 @@ def test_query_batch_matches_stacked_single_outputs(
     )
     actual = numba_impl.generate_query_fde_batch(queries, config)
     _assert_close(actual, expected)
-
