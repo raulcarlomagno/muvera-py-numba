@@ -9,8 +9,8 @@ description = "Numba-optimized Fixed Dimensional Encoding generator based on muv
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "numpy",
-  "numba",
+  "numpy>=2.4,<2.5",
+  "numba>=0.65,<0.66",
 ]
 
 keywords = ["numba", "numpy", "fde", "fixed-dimensional-encoding", "muvera", "embeddings"]
