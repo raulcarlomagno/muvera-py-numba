@@ -124,6 +124,54 @@ DOCUMENT_CASES = [
 ]
 
 
+GENERATE_FDE_CASES = [
+    (
+        "dispatch_query_identity",
+        replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=16,
+            num_repetitions=2,
+            num_simhash_projections=3,
+            seed=101,
+            encoding_type=numba_impl.EncodingType.DEFAULT_SUM,
+        ),
+        17,
+        4101,
+    ),
+    (
+        "dispatch_document_fill_empty",
+        replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=16,
+            num_repetitions=2,
+            num_simhash_projections=3,
+            seed=111,
+            encoding_type=numba_impl.EncodingType.AVERAGE,
+            fill_empty_partitions=True,
+        ),
+        5,
+        4201,
+    ),
+    (
+        "dispatch_document_ams_final_projection",
+        replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=16,
+            num_repetitions=3,
+            num_simhash_projections=4,
+            seed=121,
+            encoding_type=numba_impl.EncodingType.AVERAGE,
+            projection_type=numba_impl.ProjectionType.AMS_SKETCH,
+            projection_dimension=8,
+            fill_empty_partitions=True,
+            final_projection_dimension=12,
+        ),
+        6,
+        4301,
+    ),
+]
+
+
 @pytest.mark.parametrize("case_name, config, length, data_seed", QUERY_CASES)
 def test_query_fde_matches_original(
     case_name: str, config, length: int, data_seed: int
@@ -141,6 +189,16 @@ def test_generate_fde_dispatch_matches_query_path(
     query = _matrix(data_seed, length, config.dimension)
     expected = original.generate_query_fde(query, _to_original_config(config))
     actual = numba_impl.generate_fde(query, config)
+    _assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("case_name, config, length, data_seed", GENERATE_FDE_CASES)
+def test_generate_fde_matches_original_for_explicit_encoding_type(
+    case_name: str, config, length: int, data_seed: int
+) -> None:
+    point_cloud = _matrix(data_seed, length, config.dimension)
+    expected = original.generate_fde(point_cloud, _to_original_config(config))
+    actual = numba_impl.generate_fde(point_cloud, config)
     _assert_close(actual, expected)
 
 
@@ -185,6 +243,45 @@ def test_document_batch_matches_original(
     docs = _docs(data_seed, lengths, config.dimension)
     expected = original.generate_document_fde_batch(docs, _to_original_config(config))
     actual = numba_impl.generate_document_fde_batch(docs, config)
+    _assert_close(actual, expected)
+
+
+def test_query_wrapper_ignores_average_encoding_type_and_uses_query_semantics() -> None:
+    config = replace(
+        numba_impl.FixedDimensionalEncodingConfig(),
+        dimension=16,
+        num_repetitions=2,
+        num_simhash_projections=3,
+        seed=131,
+        encoding_type=numba_impl.EncodingType.AVERAGE,
+        projection_type=numba_impl.ProjectionType.AMS_SKETCH,
+        projection_dimension=8,
+        final_projection_dimension=20,
+    )
+    query = _matrix(4401, 7, config.dimension)
+
+    expected = original.generate_query_fde(query, _to_original_config(config))
+    actual = numba_impl.generate_query_fde(query, config)
+    _assert_close(actual, expected)
+
+
+def test_document_wrapper_ignores_sum_encoding_type_and_uses_document_semantics() -> None:
+    config = replace(
+        numba_impl.FixedDimensionalEncodingConfig(),
+        dimension=16,
+        num_repetitions=2,
+        num_simhash_projections=3,
+        seed=141,
+        encoding_type=numba_impl.EncodingType.DEFAULT_SUM,
+        projection_type=numba_impl.ProjectionType.AMS_SKETCH,
+        projection_dimension=8,
+        fill_empty_partitions=True,
+        final_projection_dimension=20,
+    )
+    document = _matrix(4501, 5, config.dimension)
+
+    expected = original.generate_document_fde(document, _to_original_config(config))
+    actual = numba_impl.generate_document_fde(document, config)
     _assert_close(actual, expected)
 
 
@@ -242,3 +339,30 @@ def test_query_batch_matches_stacked_single_outputs(
     )
     actual = numba_impl.generate_query_fde_batch(queries, config)
     _assert_close(actual, expected)
+
+
+def test_equivalence_suite_exercises_all_config_parameters() -> None:
+    query_configs = [config for _, config, _, _ in QUERY_CASES]
+    document_configs = [config for _, config, _, _ in DOCUMENT_CASES]
+    dispatch_configs = [config for _, config, _, _ in GENERATE_FDE_CASES]
+    all_configs = query_configs + document_configs + dispatch_configs
+
+    assert {config.dimension for config in all_configs} == {16}
+    assert {config.num_repetitions for config in all_configs} >= {2, 3}
+    assert {config.num_simhash_projections for config in all_configs} >= {3, 4}
+    assert len({config.seed for config in all_configs}) == len(all_configs)
+    assert {
+        config.encoding_type for config in dispatch_configs
+    } == {
+        numba_impl.EncodingType.DEFAULT_SUM,
+        numba_impl.EncodingType.AVERAGE,
+    }
+    assert {config.projection_type for config in all_configs} == {
+        numba_impl.ProjectionType.DEFAULT_IDENTITY,
+        numba_impl.ProjectionType.AMS_SKETCH,
+    }
+    assert any(config.projection_dimension is None for config in all_configs)
+    assert any(config.projection_dimension == 8 for config in all_configs)
+    assert {config.fill_empty_partitions for config in all_configs} == {False, True}
+    assert any(config.final_projection_dimension is None for config in all_configs)
+    assert any(config.final_projection_dimension is not None for config in all_configs)
