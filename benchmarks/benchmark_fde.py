@@ -223,6 +223,19 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
         "data_seed": 1_003,
         "length": 384,
     },
+    "query_single_final_projection": {
+        "kind": "query_single",
+        "config": replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=512,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
+            seed=BENCHMARK_CONFIG_SEED,
+            final_projection_dimension=1024,
+        ),
+        "data_seed": 1_004,
+        "length": 96,
+    },
     "document_single_small": {
         "kind": "document_single",
         "config": replace(
@@ -261,6 +274,20 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
         ),
         "data_seed": 2_003,
         "length": 512,
+    },
+    "document_single_final_projection": {
+        "kind": "document_single",
+        "config": replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=512,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
+            seed=BENCHMARK_CONFIG_SEED,
+            fill_empty_partitions=True,
+            final_projection_dimension=1024,
+        ),
+        "data_seed": 2_004,
+        "length": 128,
     },
     "document_batch_small": {
         "kind": "document_batch",
@@ -313,6 +340,24 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
         "min_length": BATCH_LENGTH_MIN,
         "max_length": BATCH_LENGTH_MAX,
     },
+    "document_batch_final_projection": {
+        "kind": "document_batch",
+        "config": replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=512,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
+            seed=BENCHMARK_CONFIG_SEED,
+            fill_empty_partitions=True,
+            final_projection_dimension=1024,
+        ),
+        "data_seed": 3_004,
+        "doc_count": BATCH_COUNT_MEDIUM,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
+    },
     "query_batch_small": {
         "kind": "query_batch",
         "config": replace(
@@ -356,6 +401,23 @@ BENCHMARK_CASES: dict[str, dict[str, Any]] = {
         ),
         "data_seed": 4_003,
         "query_count": BATCH_COUNT_LARGE,
+        "length_mean": BATCH_LENGTH_MEAN,
+        "length_std": BATCH_LENGTH_STD,
+        "min_length": BATCH_LENGTH_MIN,
+        "max_length": BATCH_LENGTH_MAX,
+    },
+    "query_batch_final_projection": {
+        "kind": "query_batch",
+        "config": replace(
+            numba_impl.FixedDimensionalEncodingConfig(),
+            dimension=512,
+            num_repetitions=BENCHMARK_NUM_REPETITIONS,
+            num_simhash_projections=BENCHMARK_NUM_SIMHASH_PROJECTIONS,
+            seed=BENCHMARK_CONFIG_SEED,
+            final_projection_dimension=1024,
+        ),
+        "data_seed": 4_004,
+        "query_count": BATCH_COUNT_MEDIUM,
         "length_mean": BATCH_LENGTH_MEAN,
         "length_std": BATCH_LENGTH_STD,
         "min_length": BATCH_LENGTH_MIN,
@@ -682,7 +744,7 @@ def main() -> None:
     parser.add_argument(
         "--repeats",
         type=int,
-        default=7,
+        default=3,
         help="Number of timing repetitions per case for original and warm Numba runs.",
     )
     parser.add_argument(

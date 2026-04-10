@@ -128,7 +128,7 @@ uv run python benchmarks/benchmark_fde.py
 
 Useful options:
 
-- `--repeats 10`: increase the number of timing repetitions
+- `--repeats 3`: increase the number of timing repetitions
 - `--cases query_single_large document_batch_large`: run only a subset of cases
 - `--skip-validate`: skip the numerical equivalence check before timing
 
@@ -151,4 +151,6 @@ Each benchmark case runs in a separate subprocess so JIT state is isolated and m
 
 ## License
 
-This repository is a derivative work based on `muvera-py`. Make sure the final project license matches the upstream terms and your intended distribution model.
+This project is based on muvera-py, which states it follows the Apache 2.0 license, although no LICENSE file is included in the original repository.
+
+This project assumes the same licensing intent.
