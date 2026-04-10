@@ -14,9 +14,9 @@ Integrated Numba's `fastmath=True` flag across computationally dense decorators.
 ## 4. Elimination of Python-Managed RNGs (`default_rng` Replacement)
 This optimization path was explored for all random matrix initializers (`simhash_matrix_from_seed`, `ams_projection_matrix_from_seed`, and `count_sketch` configurations), replacing `np.random.default_rng()` with Numba-native random generation in order to reduce Python-side overhead during repeated setup work.
 
-However, this change was ultimately not kept in the current version, because the project now prioritizes output equivalence with the original Python implementation from `muvera-py`. Keeping the original RNG behavior makes it easier to compare outputs directly between both versions.
+However, after testing that approach in the current Numba implementation, the measured gains were too small to justify the extra complexity and the loss of strict output equivalence with `muvera-py`.
 
-That said, a future version of the Numba module could expose a configuration parameter to choose between two modes: preserving the original Python RNG behavior for output equivalence, or using Numba-native random generation for maximum throughput.
+For that reason, the current version keeps the original `np.random.default_rng()` behavior so comparisons with the reference Python implementation remain straightforward.
 
 ## 5. Memory-Constrained "In-Place" Operations
 Deprecated slow allocation flows like `np.add.at` or large Hamming distance sub-array tracking (such as in `fill_empty_partitions`). These were converted to nested native algorithms that modify multi-dimensional tensors directly by their indexes, eliminating gigabytes of transient RAM footprint during large dataset processing. 
