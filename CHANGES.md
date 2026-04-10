@@ -26,3 +26,15 @@ Injected `np.ascontiguousarray` into critical cross-paths (`query_embeddings_lis
 
 ## 7. Parallelized Batched Query Interface
 Introduced `generate_query_fde_batch` to explicitly extend batch optimizations across query-generation points (bypassing naive loops that called `generate_query_fde` individually). It replicates the extreme efficiency of the document aggregators across multi-query processing limits.
+
+## 8. Seeded Projection and Count Sketch Caching
+Added Python-side caches for seeded SimHash matrices, AMS projection matrices, and Count Sketch parameters. Repeated invocations with the same `(dimension, projection count, seed)` or `(seed, size, final_dimension)` combinations now reuse previously generated artifacts instead of rebuilding them on every call, reducing setup overhead while preserving output equivalence.
+
+## 9. Dedicated Single-Input Execution Paths
+Split the single-query and single-document flows away from the batch wrappers through `_generate_query_fde_single()` and `_generate_document_fde_single()`. This avoids the extra list wrapping, stacking, and boundary construction work that batch-oriented code performs even for one point cloud, while keeping the same public API and output semantics.
+
+## 10. Profiling Hooks for Stage-Level Timing
+Introduced optional profiling instrumentation controlled by the `MUVERA_NUMBA_PROFILE` environment variable. When enabled, the Numba generator now logs stage timings for projection, partition indexing, aggregation, empty-partition filling, and final Count Sketch projection, making it easier to diagnose where time is spent without changing functional behavior.
+
+## 11. Cached Partition-Bit Preparation for `fill_empty_partitions`
+Optimized the `fill_empty_partitions` path by precomputing binary sketch bits and caching the target bit-patterns associated with each Gray-code-derived partition. This removes repeated Gray-to-binary conversions and repeated threshold comparisons from the innermost loops, reducing overhead in the most expensive document-side fallback path.
